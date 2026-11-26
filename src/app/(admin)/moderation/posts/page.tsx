@@ -11,6 +11,7 @@ import {
   Paperclip,
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api-client';
+import { useAuth } from '@/lib/auth-context';
 import {
   Badge,
   Button,
@@ -33,6 +34,7 @@ import type {
 } from '@/types/api';
 
 export default function PostsModerationPage() {
+  const { isPlatformAdmin, isChurchAdmin, administeredChurchIds, scopedChurchId } = useAuth();
   const toast = useToast();
 
   const [posts, setPosts] = useState<PostRecord[]>([]);
@@ -52,10 +54,16 @@ export default function PostsModerationPage() {
       const res = await api.get<PostRecord[]>('/posts/moderation/queue', {
         category: category || undefined,
         type: type || undefined,
+        churchId: !isPlatformAdmin && isChurchAdmin ? scopedChurchId : undefined,
         page: 1,
         limit: 50,
       });
-      setPosts(Array.isArray(res.data) ? res.data : []);
+      const rawPosts = Array.isArray(res.data) ? res.data : [];
+      setPosts(
+        isPlatformAdmin || !isChurchAdmin
+          ? rawPosts
+          : rawPosts.filter((p) => administeredChurchIds.includes(p.churchId)),
+      );
     } catch (err) {
       toast.error(
         'Failed to load posts moderation queue',
@@ -64,7 +72,7 @@ export default function PostsModerationPage() {
     } finally {
       setLoading(false);
     }
-  }, [category, type, toast]);
+  }, [category, type, isPlatformAdmin, isChurchAdmin, administeredChurchIds, scopedChurchId, toast]);
 
   useEffect(() => {
     loadQueue();

@@ -266,6 +266,23 @@ export default function ChurchDetailPage() {
     );
   }
 
+  if (!isPlatformAdmin && !administeredChurchIds.includes(church.id)) {
+    return (
+      <EmptyState
+        icon={<Building2 className="h-6 w-6" />}
+        title="Access Restricted to Your Congregation"
+        description="Church Admins can only view and manage their own assigned NKST congregation. Only the Platform Admin at HQ can view all churches."
+        action={
+          <Link href="/churches">
+            <Button variant="primary" size="sm">
+              Return to My Congregation
+            </Button>
+          </Link>
+        }
+      />
+    );
+  }
+
   const adminDisplay =
     church.adminMember && 'fullName' in church.adminMember
       ? church.adminMember.fullName

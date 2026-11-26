@@ -34,7 +34,7 @@ import type { ChurchRecord, VerificationRequestRecord } from '@/types/api';
 const REQUIRED_ACKNOWLEDGEMENTS = 10;
 
 export default function VerificationQueuePage() {
-  const { isPlatformAdmin } = useAuth();
+  const { isPlatformAdmin, administeredChurchIds, scopedChurchId } = useAuth();
   const toast = useToast();
 
   const [requests, setRequests] = useState<VerificationRequestRecord[]>([]);
@@ -61,13 +61,18 @@ export default function VerificationQueuePage() {
     try {
       const [queueRes, churchesRes] = await Promise.all([
         api.get<VerificationRequestRecord[]>('/verification/queue', {
-          churchId: selectedChurchId || undefined,
+          churchId: isPlatformAdmin ? selectedChurchId || undefined : scopedChurchId,
         }),
         isPlatformAdmin
           ? api.get<ChurchRecord[]>('/churches', { page: 1, limit: 100 })
           : Promise.resolve({ data: [] as ChurchRecord[] }),
       ]);
-      setRequests(Array.isArray(queueRes.data) ? queueRes.data : []);
+      const rawRequests = Array.isArray(queueRes.data) ? queueRes.data : [];
+      setRequests(
+        isPlatformAdmin
+          ? rawRequests
+          : rawRequests.filter((r) => administeredChurchIds.includes(r.churchId)),
+      );
       if (Array.isArray(churchesRes.data)) {
         setChurches(churchesRes.data);
       }
@@ -79,7 +84,7 @@ export default function VerificationQueuePage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedChurchId, isPlatformAdmin, toast]);
+  }, [selectedChurchId, isPlatformAdmin, administeredChurchIds, scopedChurchId, toast]);
 
   useEffect(() => {
     loadData();

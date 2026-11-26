@@ -38,7 +38,8 @@ import type {
 } from '@/types/api';
 
 export default function CommunicationsPage() {
-  const { isPlatformAdmin, isChurchAdmin, member } = useAuth();
+  const { isPlatformAdmin, isChurchAdmin, member, administeredChurchIds, scopedChurchId } =
+    useAuth();
   const toast = useToast();
 
   const [tab, setTab] = useState<'announcements' | 'recitations'>('announcements');
@@ -73,15 +74,32 @@ export default function CommunicationsPage() {
     setLoading(true);
     try {
       const [annRes, recRes, churchesRes] = await Promise.all([
-        api.get<PostRecord[]>('/communication/announcements'),
+        api.get<PostRecord[]>('/communication/announcements', {
+          churchId: isPlatformAdmin ? undefined : scopedChurchId,
+        }),
         api.get<RecitationRecord[]>('/communication/recitations', {
           search: recitationSearch.trim() || undefined,
         }),
         api.get<ChurchRecord[]>('/churches', { page: 1, limit: 100 }),
       ]);
-      setAnnouncements(Array.isArray(annRes.data) ? annRes.data : []);
+      const rawAnn = Array.isArray(annRes.data) ? annRes.data : [];
+      setAnnouncements(
+        isPlatformAdmin
+          ? rawAnn
+          : rawAnn.filter(
+              (a) =>
+                a.audience === 'general' ||
+                administeredChurchIds.includes(a.churchId) ||
+                (a.audienceChurchId ? administeredChurchIds.includes(a.audienceChurchId) : false),
+            ),
+      );
       setRecitations(Array.isArray(recRes.data) ? recRes.data : []);
-      setChurches(Array.isArray(churchesRes.data) ? churchesRes.data : []);
+      const rawChurches = Array.isArray(churchesRes.data) ? churchesRes.data : [];
+      setChurches(
+        isPlatformAdmin
+          ? rawChurches
+          : rawChurches.filter((c) => administeredChurchIds.includes(c.id)),
+      );
     } catch (err) {
       toast.error(
         'Failed to load communications',
@@ -90,7 +108,7 @@ export default function CommunicationsPage() {
     } finally {
       setLoading(false);
     }
-  }, [recitationSearch, toast]);
+  }, [recitationSearch, isPlatformAdmin, administeredChurchIds, scopedChurchId, toast]);
 
   useEffect(() => {
     loadData();

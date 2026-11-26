@@ -43,7 +43,8 @@ import type {
 } from '@/types/api';
 
 export default function GroupsAdminPage() {
-  const { isPlatformAdmin, isChurchAdmin, member } = useAuth();
+  const { isPlatformAdmin, isChurchAdmin, member, administeredChurchIds, scopedChurchId } =
+    useAuth();
   const canCreateGroups = isPlatformAdmin || isChurchAdmin;
   const toast = useToast();
 
@@ -84,23 +85,42 @@ export default function GroupsAdminPage() {
       const [groupsRes, churchesRes] = await Promise.all([
         api.get<GroupRecord[]>('/groups', {
           search: search.trim() || undefined,
-          scope: scopeFilter || undefined,
+          churchId: isPlatformAdmin ? undefined : scopedChurchId,
+          scope: isPlatformAdmin ? scopeFilter || undefined : 'church',
           visibility: visibilityFilter || undefined,
         }),
         canCreateGroups
           ? api.get<ChurchRecord[]>('/churches', { page: 1, limit: 100 })
           : Promise.resolve({ data: [] as ChurchRecord[] }),
       ]);
-      setGroups(Array.isArray(groupsRes.data) ? groupsRes.data : []);
+      const rawGroups = Array.isArray(groupsRes.data) ? groupsRes.data : [];
+      setGroups(
+        isPlatformAdmin
+          ? rawGroups
+          : rawGroups.filter((g) => g.churchId && administeredChurchIds.includes(g.churchId)),
+      );
       if (Array.isArray(churchesRes.data)) {
-        setChurches(churchesRes.data);
+        setChurches(
+          isPlatformAdmin
+            ? churchesRes.data
+            : churchesRes.data.filter((c) => administeredChurchIds.includes(c.id)),
+        );
       }
     } catch (err) {
       toast.error('Failed to load groups', err instanceof ApiError ? err.message : undefined);
     } finally {
       setLoading(false);
     }
-  }, [search, scopeFilter, visibilityFilter, canCreateGroups, toast]);
+  }, [
+    search,
+    scopeFilter,
+    visibilityFilter,
+    canCreateGroups,
+    isPlatformAdmin,
+    administeredChurchIds,
+    scopedChurchId,
+    toast,
+  ]);
 
   useEffect(() => {
     loadGroups();

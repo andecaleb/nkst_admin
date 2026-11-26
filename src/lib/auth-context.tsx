@@ -14,6 +14,7 @@ interface AuthContextValue {
   roles: AdminRole[];
   roleAssignments: MemberRoleAssignment[];
   administeredChurchIds: string[];
+  scopedChurchId: string | undefined;
   loading: boolean;
   isAuthenticated: boolean;
   hasAdminAccess: boolean;
@@ -180,12 +181,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return Array.from(ids);
   }, [roleAssignments, roles, member]);
 
+  const scopedChurchId = useMemo(() => {
+    if (roles.includes('PLATFORM_ADMIN')) return undefined;
+    return administeredChurchIds[0] || member?.churchId || undefined;
+  }, [roles, administeredChurchIds, member?.churchId]);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       member,
       roles,
       roleAssignments,
       administeredChurchIds,
+      scopedChurchId,
       loading,
       isAuthenticated: Boolean(member),
       hasAdminAccess: roles.length > 0,
@@ -203,6 +210,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       roles,
       roleAssignments,
       administeredChurchIds,
+      scopedChurchId,
       loading,
       suspensionNotice,
       login,

@@ -33,7 +33,7 @@ import { PHOTO_CATEGORY_LABELS } from '@/types/api';
 import type { AlbumRecord, ChurchRecord, PhotoRecord } from '@/types/api';
 
 export default function GalleryReviewPage() {
-  const { member, isPlatformAdmin } = useAuth();
+  const { member, isPlatformAdmin, administeredChurchIds } = useAuth();
   const toast = useToast();
 
   const [tab, setTab] = useState<'queue' | 'albums'>('queue');
@@ -63,8 +63,16 @@ export default function GalleryReviewPage() {
         api.get<PhotoRecord[]>('/gallery/review-queue'),
         api.get<ChurchRecord[]>('/churches', { page: 1, limit: 100 }),
       ]);
-      setPhotos(Array.isArray(queueRes.data) ? queueRes.data : []);
-      const list = Array.isArray(churchesRes.data) ? churchesRes.data : [];
+      const rawPhotos = Array.isArray(queueRes.data) ? queueRes.data : [];
+      setPhotos(
+        isPlatformAdmin
+          ? rawPhotos
+          : rawPhotos.filter((p) => administeredChurchIds.includes(p.churchId)),
+      );
+      const rawChurches = Array.isArray(churchesRes.data) ? churchesRes.data : [];
+      const list = isPlatformAdmin
+        ? rawChurches
+        : rawChurches.filter((c) => administeredChurchIds.includes(c.id));
       setChurches(list);
       if (!selectedChurchId && list.length > 0) {
         setSelectedChurchId(member?.churchId || list[0].id);
@@ -77,7 +85,7 @@ export default function GalleryReviewPage() {
     } finally {
       setLoading(false);
     }
-  }, [member?.churchId, selectedChurchId, toast]);
+  }, [member?.churchId, selectedChurchId, isPlatformAdmin, administeredChurchIds, toast]);
 
   const loadAlbums = useCallback(async () => {
     if (!selectedChurchId) return;

@@ -44,7 +44,7 @@ import type {
 type SortKey = 'name' | 'state' | 'lga' | 'members' | 'status';
 
 export default function ChurchesPage() {
-  const { isPlatformAdmin } = useAuth();
+  const { isPlatformAdmin, administeredChurchIds } = useAuth();
   const toast = useToast();
 
   const [view, setView] = useState<'table' | 'map'>('table');
@@ -126,11 +126,25 @@ export default function ChurchesPage() {
           .catch(() => ({ data: null as AdminCounts | null })),
       ]);
 
-      setChurches(Array.isArray(listRes.data) ? listRes.data : []);
+      const rawChurches = Array.isArray(listRes.data) ? listRes.data : [];
+      const scopedChurches = isPlatformAdmin
+        ? rawChurches
+        : rawChurches.filter((c) => administeredChurchIds.includes(c.id));
+
+      setChurches(scopedChurches);
       if (listRes.meta) {
-        setPagination(listRes.meta);
+        setPagination(
+          isPlatformAdmin
+            ? listRes.meta
+            : { page: 1, totalPages: 1, total: scopedChurches.length },
+        );
       }
-      setMapPins(Array.isArray(pinsRes.data) ? pinsRes.data : []);
+      const rawPins = Array.isArray(pinsRes.data) ? pinsRes.data : [];
+      setMapPins(
+        isPlatformAdmin
+          ? rawPins
+          : rawPins.filter((p) => administeredChurchIds.includes(p.id)),
+      );
 
       if (countsRes.data?.membersByChurch) {
         const map: Record<string, number> = {};
@@ -144,7 +158,7 @@ export default function ChurchesPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, stateFilter, lgaFilter, statusFilter, page, toast]);
+  }, [search, stateFilter, lgaFilter, statusFilter, page, isPlatformAdmin, administeredChurchIds, toast]);
 
   useEffect(() => {
     loadLocations();

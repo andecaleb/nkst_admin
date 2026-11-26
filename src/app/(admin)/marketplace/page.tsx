@@ -14,6 +14,7 @@ import {
   Info,
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api-client';
+import { useAuth } from '@/lib/auth-context';
 import {
   Badge,
   Button,
@@ -43,6 +44,7 @@ import type {
 } from '@/types/api';
 
 export default function MarketplaceGovernancePage() {
+  const { isPlatformAdmin, administeredChurchIds, scopedChurchId } = useAuth();
   const toast = useToast();
 
   const [tab, setTab] = useState<'pool' | 'listings' | 'sellers'>('pool');
@@ -69,10 +71,22 @@ export default function MarketplaceGovernancePage() {
     try {
       const [poolRes, listingsRes] = await Promise.all([
         api.get<FulfilmentOrderRecord[]>('/marketplace/fulfilment-pool'),
-        api.get<ResourceRecord[]>('/marketplace/listings'),
+        api.get<ResourceRecord[]>('/marketplace/listings', {
+          churchId: isPlatformAdmin ? undefined : scopedChurchId,
+        }),
       ]);
-      setPool(Array.isArray(poolRes.data) ? poolRes.data : []);
-      setListings(Array.isArray(listingsRes.data) ? listingsRes.data : []);
+      const rawPool = Array.isArray(poolRes.data) ? poolRes.data : [];
+      const rawListings = Array.isArray(listingsRes.data) ? listingsRes.data : [];
+      setPool(
+        isPlatformAdmin
+          ? rawPool
+          : rawPool.filter((o) => administeredChurchIds.includes(o.churchId)),
+      );
+      setListings(
+        isPlatformAdmin
+          ? rawListings
+          : rawListings.filter((l) => administeredChurchIds.includes(l.churchId)),
+      );
     } catch (err) {
       toast.error(
         'Failed to load marketplace data',
@@ -81,7 +95,7 @@ export default function MarketplaceGovernancePage() {
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [isPlatformAdmin, administeredChurchIds, scopedChurchId, toast]);
 
   useEffect(() => {
     loadData();

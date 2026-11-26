@@ -31,7 +31,7 @@ import { formatDateTime, formatEnumLabel } from '@/lib/format';
 import type { AdminCounts, ChurchRecord, ModerationActionEntry } from '@/types/api';
 
 export default function DashboardPage() {
-  const { member, isPlatformAdmin, isChurchAdmin } = useAuth();
+  const { member, isPlatformAdmin, isChurchAdmin, administeredChurchIds } = useAuth();
   const canViewCounts = isPlatformAdmin || isChurchAdmin;
   const toast = useToast();
 
@@ -49,13 +49,22 @@ export default function DashboardPage() {
           api.get<ModerationActionEntry[]>('/audit/moderation-actions', { limit: 10 }),
           api.get<ChurchRecord[]>('/churches', { page: 1, limit: 100 }),
         ]);
-        setCounts(countsRes.data);
+        const countsData = countsRes.data;
+        if (!isPlatformAdmin && countsData) {
+          countsData.membersByChurch = (countsData.membersByChurch || []).filter((r) =>
+            administeredChurchIds.includes(r.churchId),
+          );
+          countsData.totalChurches = administeredChurchIds.length || 1;
+        }
+        setCounts(countsData);
         setRecentModeration(Array.isArray(modRes.data) ? modRes.data : []);
         const map: Record<string, string> = {};
         if (Array.isArray(churchesRes.data)) {
-          churchesRes.data.forEach((c) => {
-            map[c.id] = c.name;
-          });
+          churchesRes.data
+            .filter((c) => isPlatformAdmin || administeredChurchIds.includes(c.id))
+            .forEach((c) => {
+              map[c.id] = c.name;
+            });
         }
         setChurchesMap(map);
       }
@@ -67,7 +76,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [canViewCounts, toast]);
+  }, [canViewCounts, isPlatformAdmin, administeredChurchIds, toast]);
 
   useEffect(() => {
     loadDashboard();

@@ -93,7 +93,12 @@ function derivePosition(
 }
 
 export default function MembersRbacPage() {
-  const { isPlatformAdmin, member: currentMember } = useAuth();
+  const {
+    isPlatformAdmin,
+    member: currentMember,
+    administeredChurchIds,
+    scopedChurchId,
+  } = useAuth();
   const toast = useToast();
 
   const [activeTab, setActiveTab] = useState<'directory' | 'matrix'>('directory');
@@ -149,7 +154,10 @@ export default function MembersRbacPage() {
         api.get<ChurchRecord[]>('/churches', { page: 1, limit: 100 }),
       ]);
 
-      const churchesList = Array.isArray(churchesRes.data) ? churchesRes.data : [];
+      const rawChurchesList = Array.isArray(churchesRes.data) ? churchesRes.data : [];
+      const churchesList = isPlatformAdmin
+        ? rawChurchesList
+        : rawChurchesList.filter((c) => administeredChurchIds.includes(c.id));
       setRolesList(Array.isArray(rolesRes.data) ? rolesRes.data : []);
       setPermissionsList(Array.isArray(permsRes.data) ? permsRes.data : []);
       setChurches(churchesList);
@@ -162,16 +170,20 @@ export default function MembersRbacPage() {
         if (c.adminMemberId) churchAdminMemberIds.add(c.adminMemberId);
       });
 
+      const effectiveChurchId = isPlatformAdmin ? churchFilter || undefined : scopedChurchId;
+
       // Attempt primary paginated directory endpoint: GET /api/v1/members
       try {
         const membersRes = await api.get<MemberProfile[]>('/members', {
           search: search.trim() || undefined,
-          churchId: churchFilter || undefined,
+          churchId: effectiveChurchId,
           verificationState: stateFilter || undefined,
           page,
           limit: 25,
         });
-        const list = Array.isArray(membersRes.data) ? membersRes.data : [];
+        const list = (Array.isArray(membersRes.data) ? membersRes.data : []).filter(
+          (m) => isPlatformAdmin || administeredChurchIds.includes(m.churchId),
+        );
         const mapped: MemberDirectoryRow[] = list.map((m) => {
           const pos = derivePosition(m, churchAdminMemberIds);
           return {
@@ -239,10 +251,14 @@ export default function MembersRbacPage() {
             }
           });
 
-          // Include members from the pending verification queue
+          // Include members from the pending verification queue (scoped to church)
           try {
-            const queueRes = await api.get<VerificationRequestRecord[]>('/verification/queue');
-            const queue = Array.isArray(queueRes.data) ? queueRes.data : [];
+            const queueRes = await api.get<VerificationRequestRecord[]>('/verification/queue', {
+              churchId: effectiveChurchId,
+            });
+            const queue = (Array.isArray(queueRes.data) ? queueRes.data : []).filter(
+              (req) => isPlatformAdmin || administeredChurchIds.includes(req.churchId),
+            );
             queue.forEach((req) => {
               if (req.member && !collected.has(req.memberId)) {
                 const m = req.member;
@@ -286,7 +302,17 @@ export default function MembersRbacPage() {
       setLoadingDirectory(false);
       setLoadingMatrix(false);
     }
-  }, [search, churchFilter, stateFilter, page, currentMember, toast]);
+  }, [
+    search,
+    churchFilter,
+    stateFilter,
+    page,
+    currentMember,
+    isPlatformAdmin,
+    administeredChurchIds,
+    scopedChurchId,
+    toast,
+  ]);
 
   useEffect(() => {
     loadData();
@@ -294,7 +320,8 @@ export default function MembersRbacPage() {
 
   const visibleRows = useMemo(() => {
     return directoryRows.filter((row) => {
-      if (churchFilter && row.churchId !== churchFilter) return false;
+      if (!isPlatformAdmin && !administeredChurchIds.includes(row.churchId)) return false;
+      if (isPlatformAdmin && churchFilter && row.churchId !== churchFilter) return false;
       if (stateFilter && row.verificationState !== stateFilter) return false;
       if (positionFilter && row.positionInChurch !== positionFilter) return false;
       if (search.trim()) {
@@ -304,7 +331,15 @@ export default function MembersRbacPage() {
       }
       return true;
     });
-  }, [directoryRows, churchFilter, stateFilter, positionFilter, search]);
+  }, [
+    directoryRows,
+    isPlatformAdmin,
+    administeredChurchIds,
+    churchFilter,
+    stateFilter,
+    positionFilter,
+    search,
+  ]);
 
   const distinctPositions = useMemo(() => {
     const set = new Set<string>([
@@ -330,6 +365,18 @@ export default function MembersRbacPage() {
           api.get<MemberDetailResponse>(`/members/${id.trim()}`),
           api.get<MemberRoleAssignment[]>(`/roles/member/${id.trim()}`),
         ]);
+        if (
+          !isPlatformAdmin &&
+          profileRes.data?.profile &&
+          !administeredChurchIds.includes(profileRes.data.profile.churchId)
+        ) {
+          setInspectOpen(false);
+          toast.warning(
+            'Access Restricted',
+            'You can only inspect members belonging to your assigned congregation.',
+          );
+          return;
+        }
         setInspected(profileRes.data);
         const rList = Array.isArray(rolesRes.data) ? rolesRes.data : [];
         setMemberRoles(rList);
@@ -512,13 +559,14 @@ export default function MembersRbacPage() {
                 />
               </div>
               <Select
-                value={churchFilter}
+                value={isPlatformAdmin ? churchFilter : scopedChurchId || ''}
                 onChange={(e) => {
                   setChurchFilter(e.target.value);
                   setPage(1);
                 }}
+                disabled={!isPlatformAdmin}
               >
-                <option value="">All Congregations</option>
+                {isPlatformAdmin && <option value="">All Congregations</option>}
                 {churches.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}

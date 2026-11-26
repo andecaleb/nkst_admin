@@ -10,6 +10,7 @@ import {
   FileText,
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api-client';
+import { useAuth } from '@/lib/auth-context';
 import {
   Badge,
   Button,
@@ -35,6 +36,7 @@ import type {
 } from '@/types/api';
 
 export default function ResourcesModerationPage() {
+  const { isPlatformAdmin, administeredChurchIds, scopedChurchId } = useAuth();
   const toast = useToast();
 
   const [tab, setTab] = useState<'queue' | 'library'>('queue');
@@ -59,15 +61,26 @@ export default function ResourcesModerationPage() {
     try {
       if (tab === 'queue') {
         const res = await api.get<ResourceRecord[]>('/resources/review-queue');
-        setQueue(Array.isArray(res.data) ? res.data : []);
+        const raw = Array.isArray(res.data) ? res.data : [];
+        setQueue(
+          isPlatformAdmin
+            ? raw
+            : raw.filter((r) => administeredChurchIds.includes(r.churchId)),
+        );
       } else {
         const res = await api.get<ResourceRecord[]>('/resources/library', {
           search: search.trim() || undefined,
+          churchId: isPlatformAdmin ? undefined : scopedChurchId,
           category: categoryFilter || undefined,
           access: accessFilter || undefined,
           format: formatFilter || undefined,
         });
-        setLibrary(Array.isArray(res.data) ? res.data : []);
+        const raw = Array.isArray(res.data) ? res.data : [];
+        setLibrary(
+          isPlatformAdmin
+            ? raw
+            : raw.filter((r) => administeredChurchIds.includes(r.churchId)),
+        );
       }
     } catch (err) {
       toast.error(
@@ -77,7 +90,17 @@ export default function ResourcesModerationPage() {
     } finally {
       setLoading(false);
     }
-  }, [tab, search, categoryFilter, accessFilter, formatFilter, toast]);
+  }, [
+    tab,
+    search,
+    categoryFilter,
+    accessFilter,
+    formatFilter,
+    isPlatformAdmin,
+    administeredChurchIds,
+    scopedChurchId,
+    toast,
+  ]);
 
   useEffect(() => {
     loadData();
