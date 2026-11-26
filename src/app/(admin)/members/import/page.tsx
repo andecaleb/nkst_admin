@@ -674,6 +674,7 @@ export default function ImportMembersPage() {
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-[#e4dfd3] bg-[#f4efe4] text-[11px] uppercase tracking-wider text-[#56635a]">
+                    <th className="px-3 py-3 w-12">S/No.</th>
                     <th className="px-3 py-3 w-10">Inc.</th>
                     <th className="px-3 py-3">Row</th>
                     <th className="px-3 py-3">Full Name</th>
@@ -684,7 +685,7 @@ export default function ImportMembersPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#ece7dc]">
-                  {filteredRows.map((row) => {
+                  {filteredRows.map((row, idx) => {
                     const badge = STATUS_BADGE[row.status];
                     const fullName = [row.firstName, row.middleName, row.surname]
                       .filter(Boolean)
@@ -701,6 +702,7 @@ export default function ImportMembersPage() {
                               : 'hover:bg-[#faf7f0]'
                         }
                       >
+                        <td className="px-3 py-3 font-mono text-[#56635a]">{idx + 1}</td>
                         <td className="px-3 py-3">
                           <input
                             type="checkbox"

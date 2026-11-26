@@ -355,6 +355,7 @@ export default function DashboardPage() {
                 <table className="w-full text-left text-xs">
                   <thead>
                     <tr className="border-b border-[#e4dfd3] text-[11px] uppercase tracking-wider text-[#56635a]">
+                      <th className="pb-2.5 pr-4 w-12">S/No.</th>
                       <th className="pb-2.5 pr-4">Subject</th>
                       <th className="pb-2.5 pr-4">Action</th>
                       <th className="pb-2.5 pr-4">Moderator</th>
@@ -363,8 +364,9 @@ export default function DashboardPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#ece7dc]">
-                    {recentModeration.map((entry) => (
+                    {recentModeration.map((entry, idx) => (
                       <tr key={entry.id} className="hover:bg-[#faf7f0]">
+                        <td className="py-3 pr-4 font-mono text-[#56635a]">{idx + 1}</td>
                         <td className="py-3 pr-4">
                           <span className="capitalize text-[#16241b]">{entry.subjectType}</span>
                           <span className="ml-2 font-mono text-[10px] text-[#56635a]">

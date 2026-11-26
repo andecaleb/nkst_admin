@@ -319,18 +319,31 @@ export default function MembersRbacPage() {
   }, [loadData]);
 
   const visibleRows = useMemo(() => {
-    return directoryRows.filter((row) => {
-      if (!isPlatformAdmin && !administeredChurchIds.includes(row.churchId)) return false;
-      if (isPlatformAdmin && churchFilter && row.churchId !== churchFilter) return false;
-      if (stateFilter && row.verificationState !== stateFilter) return false;
-      if (positionFilter && row.positionInChurch !== positionFilter) return false;
-      if (search.trim()) {
-        const q = search.trim().toLowerCase();
-        const hay = `${row.fullName} ${row.email || ''} ${row.phone || ''} ${row.churchName} ${row.positionInChurch}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    });
+    const positionRank = (pos: string) => {
+      if (pos.includes('Platform Admin')) return 0;
+      if (pos.includes('Church Admin')) return 1;
+      if (pos.includes('Group Admin')) return 2;
+      return 3;
+    };
+
+    return directoryRows
+      .filter((row) => {
+        if (!isPlatformAdmin && !administeredChurchIds.includes(row.churchId)) return false;
+        if (isPlatformAdmin && churchFilter && row.churchId !== churchFilter) return false;
+        if (stateFilter && row.verificationState !== stateFilter) return false;
+        if (positionFilter && row.positionInChurch !== positionFilter) return false;
+        if (search.trim()) {
+          const q = search.trim().toLowerCase();
+          const hay = `${row.fullName} ${row.email || ''} ${row.phone || ''} ${row.churchName} ${row.positionInChurch}`.toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const diff = positionRank(a.positionInChurch) - positionRank(b.positionInChurch);
+        if (diff !== 0) return diff;
+        return a.fullName.localeCompare(b.fullName);
+      });
   }, [
     directoryRows,
     isPlatformAdmin,
@@ -632,6 +645,7 @@ export default function MembersRbacPage() {
                 <table className="w-full text-left text-xs">
                   <thead>
                     <tr className="border-b border-[#e4dfd3] bg-[#f4efe4] text-[11px] uppercase tracking-wider text-[#56635a]">
+                      <th className="px-4 py-3.5 w-14">S/No.</th>
                       <th className="px-4 py-3.5">Member</th>
                       <th className="px-4 py-3.5">Church / Congregation</th>
                       <th className="px-4 py-3.5">Position in Church</th>
@@ -641,8 +655,12 @@ export default function MembersRbacPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#ece7dc]">
-                    {visibleRows.map((row) => (
+                    {visibleRows.map((row, idx) => {
+                      const serialNo =
+                        ((pagination.page ?? page) - 1) * (pagination.limit ?? 25) + idx + 1;
+                      return (
                       <tr key={row.id} className="hover:bg-[#faf7f0] transition-colors">
+                        <td className="px-4 py-3.5 font-mono text-[#56635a]">{serialNo}</td>
                         <td className="px-4 py-3.5">
                           <p className="font-semibold text-[#16241b]">{row.fullName}</p>
                           <p className="mt-0.5 text-[11px] text-[#56635a]">
@@ -688,7 +706,8 @@ export default function MembersRbacPage() {
                           </Button>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

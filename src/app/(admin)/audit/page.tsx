@@ -113,6 +113,7 @@ export default function AuditLogsPage() {
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-[#e4dfd3] bg-[#f4efe4] text-[11px] uppercase tracking-wider text-[#56635a]">
+                    <th className="px-4 py-3 w-14">S/No.</th>
                     <th className="px-4 py-3">Action</th>
                     <th className="px-4 py-3">Actor</th>
                     <th className="px-4 py-3">Entity</th>
@@ -121,8 +122,9 @@ export default function AuditLogsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#ece7dc]">
-                  {systemLogs.map((log) => (
+                  {systemLogs.map((log, idx) => (
                     <tr key={log.id} className="hover:bg-[#faf7f0]">
+                      <td className="px-4 py-3 font-mono text-[#56635a]">{idx + 1}</td>
                       <td className="px-4 py-3">
                         <Badge tone="gold">{log.action}</Badge>
                       </td>
@@ -164,6 +166,7 @@ export default function AuditLogsPage() {
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-[#e4dfd3] bg-[#f4efe4] text-[11px] uppercase tracking-wider text-[#56635a]">
+                  <th className="px-4 py-3 w-14">S/No.</th>
                   <th className="px-4 py-3">Subject</th>
                   <th className="px-4 py-3">Decision</th>
                   <th className="px-4 py-3">Moderator</th>
@@ -172,8 +175,9 @@ export default function AuditLogsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#ece7dc]">
-                {moderationLogs.map((entry) => (
+                {moderationLogs.map((entry, idx) => (
                   <tr key={entry.id} className="hover:bg-[#faf7f0]">
+                    <td className="px-4 py-3 font-mono text-[#56635a]">{idx + 1}</td>
                     <td className="px-4 py-3">
                       <span className="capitalize text-[#16241b]">{entry.subjectType}</span>
                       <span className="ml-1.5 font-mono text-[10px] text-[#56635a]">

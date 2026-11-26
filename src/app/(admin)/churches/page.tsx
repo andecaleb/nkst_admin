@@ -373,6 +373,7 @@ export default function ChurchesPage() {
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-[#e4dfd3] bg-[#f4efe4] text-[11px] uppercase tracking-wider text-[#56635a]">
+                    <th className="px-4 py-3.5 w-14">S/No.</th>
                     <th className="px-4 py-3.5">
                       <button
                         type="button"
@@ -419,15 +420,17 @@ export default function ChurchesPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#ece7dc]">
-                  {sortedChurches.map((church) => {
+                  {sortedChurches.map((church, idx) => {
                     const memberCount =
                       memberCountMap[church.id] ?? church._count?.members ?? 0;
                     const adminName = getAdminDisplayName(church);
+                    const serialNo = ((pagination.page ?? page) - 1) * (pagination.limit ?? 20) + idx + 1;
                     return (
                       <tr
                         key={church.id}
                         className="hover:bg-[#faf7f0] transition-colors"
                       >
+                        <td className="px-4 py-3.5 font-mono text-[#56635a]">{serialNo}</td>
                         <td className="px-4 py-3.5">
                           <div className="flex items-center gap-2">
                             <Link
