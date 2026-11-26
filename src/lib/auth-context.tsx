@@ -7,25 +7,32 @@ import type {
   LoginResponse,
   MemberProfile,
   MemberRoleAssignment,
+  MyBranchPermissionsResponse,
+  PositionPermissionKey,
 } from '@/types/api';
 
-interface AuthContextValue {
+export interface AuthContextValue {
   member: MemberProfile | null;
   roles: AdminRole[];
   roleAssignments: MemberRoleAssignment[];
   administeredChurchIds: string[];
   scopedChurchId: string | undefined;
+  branchId: string | null;
+  permissions: PositionPermissionKey[];
   loading: boolean;
   isAuthenticated: boolean;
   hasAdminAccess: boolean;
+  isHqAdmin: boolean;
   isPlatformAdmin: boolean;
   isChurchAdmin: boolean;
   isGroupAdmin: boolean;
+  can: (permissionKey: PositionPermissionKey) => boolean;
   suspensionNotice: LoginResponse['suspensionNotice'];
   login: (identifier: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   logoutAll: () => Promise<void>;
   refreshSession: () => Promise<void>;
+  refreshPermissions: () => Promise<PositionPermissionKey[]>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -36,12 +43,58 @@ function isAdminRole(roleName: string): roleName is AdminRole {
   return ADMIN_ROLES.includes(roleName as AdminRole);
 }
 
+export function computeCanPermission(
+  permissions: PositionPermissionKey[],
+  key: PositionPermissionKey,
+): boolean {
+  return permissions.includes(key);
+}
+
+export function computeHasAdminAccess(params: {
+  isHqAdmin: boolean;
+  roles: AdminRole[];
+  permissions: PositionPermissionKey[];
+}): boolean {
+  return (
+    params.isHqAdmin ||
+    params.permissions.length > 0 ||
+    params.roles.includes('CHURCH_ADMIN') ||
+    params.roles.includes('GROUP_ADMIN') ||
+    params.roles.includes('PLATFORM_ADMIN')
+  );
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [member, setMember] = useState<MemberProfile | null>(null);
   const [roles, setRoles] = useState<AdminRole[]>([]);
   const [roleAssignments, setRoleAssignments] = useState<MemberRoleAssignment[]>([]);
+  const [branchId, setBranchId] = useState<string | null>(null);
+  const [permissions, setPermissions] = useState<PositionPermissionKey[]>([]);
   const [suspensionNotice, setSuspensionNotice] = useState<LoginResponse['suspensionNotice']>(null);
   const [loading, setLoading] = useState(true);
+
+  const fetchMyPermissions = useCallback(async (): Promise<{
+    branchId: string | null;
+    permissions: PositionPermissionKey[];
+  }> => {
+    try {
+      const res = await api.get<MyBranchPermissionsResponse>('/branch/positions/my-permissions');
+      const perms = Array.isArray(res.data?.permissions) ? res.data.permissions : [];
+      const bId = res.data?.branchId ?? null;
+      setBranchId(bId);
+      setPermissions(perms);
+      return { branchId: bId, permissions: perms };
+    } catch {
+      setBranchId(null);
+      setPermissions([]);
+      return { branchId: null, permissions: [] };
+    }
+  }, []);
+
+  const refreshPermissions = useCallback(async () => {
+    const { permissions: nextPerms } = await fetchMyPermissions();
+    return nextPerms;
+  }, [fetchMyPermissions]);
 
   const resolveAdminRoles = useCallback(async (profile: MemberProfile) => {
     const resolved = new Set<AdminRole>();
@@ -60,8 +113,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           resolved.add(a.role.name);
         }
       });
-      // GET /roles/member/:id is guarded by CHURCH_ADMIN | PLATFORM_ADMIN;
-      // a 200 response for a non-Platform Admin confirms Church Admin authority.
       if (!profile.isPlatformAdmin && !resolved.has('CHURCH_ADMIN')) {
         resolved.add('CHURCH_ADMIN');
       }
@@ -72,7 +123,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await api.get('/posts/moderation/queue', { page: 1, limit: 1 });
           resolved.add('GROUP_ADMIN');
         } catch {
-          // Regular MEMBER or VISITOR — no admin access
+          // Delegated position holders (e.g. Catechism Leader) are authorized via my-permissions
         }
       }
     }
@@ -81,39 +132,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setRoles(Array.from(resolved));
   }, []);
 
+  const hydrateUserSession = useCallback(async () => {
+    // 01-auth-and-permissions-shell.md: fetch /members/me and /branch/positions/my-permissions in parallel
+    const [meRes] = await Promise.all([
+      api.get<MemberProfile>('/members/me'),
+      fetchMyPermissions(),
+    ]);
+
+    setMember(meRes.data);
+    if (meRes.data.verificationState === 'suspended') {
+      setSuspensionNotice({
+        suspended: true,
+        readOnly: true,
+        reason: meRes.data.suspensionReason || 'Account suspended by administrator',
+      });
+    } else {
+      setSuspensionNotice(null);
+    }
+    await resolveAdminRoles(meRes.data);
+  }, [fetchMyPermissions, resolveAdminRoles]);
+
   const refreshSession = useCallback(async () => {
     const token = tokenStorage.getAccessToken();
     if (!token) {
       setMember(null);
       setRoles([]);
       setRoleAssignments([]);
+      setBranchId(null);
+      setPermissions([]);
       setLoading(false);
       return;
     }
 
     setLoading(true);
     try {
-      const res = await api.get<MemberProfile>('/members/me');
-      setMember(res.data);
-      if (res.data.verificationState === 'suspended') {
-        setSuspensionNotice({
-          suspended: true,
-          readOnly: true,
-          reason: res.data.suspensionReason || 'Account suspended by administrator',
-        });
-      } else {
-        setSuspensionNotice(null);
-      }
-      await resolveAdminRoles(res.data);
+      await hydrateUserSession();
     } catch {
       tokenStorage.clear();
       setMember(null);
       setRoles([]);
       setRoleAssignments([]);
+      setBranchId(null);
+      setPermissions([]);
     } finally {
       setLoading(false);
     }
-  }, [resolveAdminRoles]);
+  }, [hydrateUserSession]);
 
   useEffect(() => {
     refreshSession();
@@ -132,13 +196,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       );
       tokenStorage.setTokens(res.data.accessToken, res.data.refreshToken);
       setSuspensionNotice(res.data.suspensionNotice ?? null);
-
-      const meRes = await api.get<MemberProfile>('/members/me');
-      setMember(meRes.data);
-      await resolveAdminRoles(meRes.data);
+      await hydrateUserSession();
     },
-    [resolveAdminRoles],
+    [hydrateUserSession],
   );
+
+  const clearLocalAuth = useCallback(() => {
+    tokenStorage.clear();
+    setMember(null);
+    setRoles([]);
+    setRoleAssignments([]);
+    setBranchId(null);
+    setPermissions([]);
+    setSuspensionNotice(null);
+  }, []);
 
   const logout = useCallback(async () => {
     try {
@@ -146,13 +217,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // Clear local session even if server call fails
     } finally {
-      tokenStorage.clear();
-      setMember(null);
-      setRoles([]);
-      setRoleAssignments([]);
-      setSuspensionNotice(null);
+      clearLocalAuth();
     }
-  }, []);
+  }, [clearLocalAuth]);
 
   const logoutAll = useCallback(async () => {
     try {
@@ -160,13 +227,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // Clear local session regardless
     } finally {
-      tokenStorage.clear();
-      setMember(null);
-      setRoles([]);
-      setRoleAssignments([]);
-      setSuspensionNotice(null);
+      clearLocalAuth();
     }
-  }, []);
+  }, [clearLocalAuth]);
+
+  const isHqAdmin = Boolean(member?.isPlatformAdmin) || roles.includes('PLATFORM_ADMIN');
 
   const administeredChurchIds = useMemo(() => {
     const ids = new Set<string>();
@@ -175,16 +240,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         ids.add(a.churchId);
       }
     });
-    if (roles.includes('CHURCH_ADMIN') && member?.churchId) {
+    if (branchId) {
+      ids.add(branchId);
+    }
+    if ((roles.includes('CHURCH_ADMIN') || permissions.length > 0) && member?.churchId) {
       ids.add(member.churchId);
     }
     return Array.from(ids);
-  }, [roleAssignments, roles, member]);
+  }, [roleAssignments, roles, branchId, permissions.length, member?.churchId]);
 
   const scopedChurchId = useMemo(() => {
-    if (roles.includes('PLATFORM_ADMIN')) return undefined;
-    return administeredChurchIds[0] || member?.churchId || undefined;
-  }, [roles, administeredChurchIds, member?.churchId]);
+    if (isHqAdmin) return undefined;
+    return branchId || administeredChurchIds[0] || member?.churchId || undefined;
+  }, [isHqAdmin, branchId, administeredChurchIds, member?.churchId]);
+
+  const can = useCallback(
+    (permissionKey: PositionPermissionKey) => computeCanPermission(permissions, permissionKey),
+    [permissions],
+  );
+
+  const hasAdminAccess = useMemo(
+    () => computeHasAdminAccess({ isHqAdmin, roles, permissions }),
+    [isHqAdmin, roles, permissions],
+  );
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -193,17 +271,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       roleAssignments,
       administeredChurchIds,
       scopedChurchId,
+      branchId,
+      permissions,
       loading,
       isAuthenticated: Boolean(member),
-      hasAdminAccess: roles.length > 0,
-      isPlatformAdmin: roles.includes('PLATFORM_ADMIN'),
+      hasAdminAccess,
+      isHqAdmin,
+      isPlatformAdmin: isHqAdmin,
       isChurchAdmin: roles.includes('CHURCH_ADMIN'),
       isGroupAdmin: roles.includes('GROUP_ADMIN'),
+      can,
       suspensionNotice,
       login,
       logout,
       logoutAll,
       refreshSession,
+      refreshPermissions,
     }),
     [
       member,
@@ -211,12 +294,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       roleAssignments,
       administeredChurchIds,
       scopedChurchId,
+      branchId,
+      permissions,
       loading,
+      hasAdminAccess,
+      isHqAdmin,
+      can,
       suspensionNotice,
       login,
       logout,
       logoutAll,
       refreshSession,
+      refreshPermissions,
     ],
   );
 

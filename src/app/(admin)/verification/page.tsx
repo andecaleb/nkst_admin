@@ -3,6 +3,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ShieldCheck,
+  ShieldOff,
+  ShieldAlert,
   CheckCircle2,
   XCircle,
   UserCheck,
@@ -34,7 +36,8 @@ import type { ChurchRecord, VerificationRequestRecord } from '@/types/api';
 const REQUIRED_ACKNOWLEDGEMENTS = 10;
 
 export default function VerificationQueuePage() {
-  const { isPlatformAdmin, administeredChurchIds, scopedChurchId } = useAuth();
+  const { isHqAdmin, isPlatformAdmin, can, administeredChurchIds, scopedChurchId } = useAuth();
+  const canVerify = isHqAdmin || can('members.verify');
   const toast = useToast();
 
   const [requests, setRequests] = useState<VerificationRequestRecord[]>([]);
@@ -56,7 +59,16 @@ export default function VerificationQueuePage() {
   const [directMemberId, setDirectMemberId] = useState('');
   const [directNote, setDirectNote] = useState('');
 
+  // Unverify member modal (04-members-verification-and-inbox-ui.md)
+  const [unverifyOpen, setUnverifyOpen] = useState(false);
+  const [unverifyMemberId, setUnverifyMemberId] = useState('');
+  const [unverifyNote, setUnverifyNote] = useState('');
+
   const loadData = useCallback(async () => {
+    if (!canVerify) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const [queueRes, churchesRes] = await Promise.all([
@@ -84,7 +96,7 @@ export default function VerificationQueuePage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedChurchId, isPlatformAdmin, administeredChurchIds, scopedChurchId, toast]);
+  }, [canVerify, selectedChurchId, isPlatformAdmin, administeredChurchIds, scopedChurchId, toast]);
 
   useEffect(() => {
     loadData();
@@ -155,6 +167,39 @@ export default function VerificationQueuePage() {
     }
   };
 
+  const handleUnverify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isValidUuid(unverifyMemberId)) {
+      toast.warning('Invalid Member UUID', 'Please enter a valid member UUID.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await api.patch(`/verification/members/${unverifyMemberId.trim()}/unverify`, {
+        decisionNote: unverifyNote.trim() || undefined,
+      });
+      toast.success('Member unverified', 'Verification status has been revoked.');
+      setUnverifyOpen(false);
+      setUnverifyMemberId('');
+      setUnverifyNote('');
+      loadData();
+    } catch (err) {
+      toast.error('Unverify failed', err instanceof ApiError ? err.message : undefined);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!canVerify) {
+    return (
+      <EmptyState
+        icon={<ShieldAlert className="h-6 w-6 text-[#b83227]" />}
+        title="403 Forbidden — Verification Permission Required"
+        description="You need the members.verify permission (or HQ Platform Admin access) to review membership verification requests."
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -166,6 +211,10 @@ export default function VerificationQueuePage() {
             <Button variant="secondary" size="sm" onClick={loadData} loading={loading}>
               <RefreshCw className="h-3.5 w-3.5" />
               Refresh
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setUnverifyOpen(true)}>
+              <ShieldOff className="h-3.5 w-3.5 text-[#b83227]" />
+              Unverify Member
             </Button>
             <Button variant="primary" size="sm" onClick={() => setDirectOpen(true)}>
               <UserCheck className="h-3.5 w-3.5" />
@@ -389,6 +438,42 @@ export default function VerificationQueuePage() {
             </Button>
             <Button type="submit" variant="primary" loading={submitting}>
               Validate Member
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Unverify Member Modal */}
+      <Modal
+        open={unverifyOpen}
+        onClose={() => setUnverifyOpen(false)}
+        title="Unverify Member"
+        description="Revoke verification for a branch member by UUID."
+      >
+        <form onSubmit={handleUnverify} className="space-y-4">
+          <div>
+            <FieldLabel required>Member UUID</FieldLabel>
+            <Input
+              value={unverifyMemberId}
+              onChange={(e) => setUnverifyMemberId(e.target.value)}
+              placeholder="e.g. 550e8400-e29b-41d4-a716-446655440000"
+              required
+            />
+          </div>
+          <div>
+            <FieldLabel hint="Optional">Decision Note</FieldLabel>
+            <Textarea
+              value={unverifyNote}
+              onChange={(e) => setUnverifyNote(e.target.value)}
+              placeholder="Reason for revoking verification..."
+            />
+          </div>
+          <div className="flex justify-end gap-2.5 pt-2">
+            <Button type="button" variant="ghost" onClick={() => setUnverifyOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="danger" loading={submitting}>
+              Unverify Member
             </Button>
           </div>
         </form>

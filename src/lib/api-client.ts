@@ -198,6 +198,8 @@ export const api = {
     apiRequest<T>(path, { method: 'POST', body, skipAuth }),
   patch: <T>(path: string, body?: unknown) =>
     apiRequest<T>(path, { method: 'PATCH', body }),
+  put: <T>(path: string, body?: unknown) =>
+    apiRequest<T>(path, { method: 'PUT', body }),
   delete: <T>(path: string) => apiRequest<T>(path, { method: 'DELETE' }),
   baseUrl: API_BASE_URL,
 };

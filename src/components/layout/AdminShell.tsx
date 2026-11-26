@@ -25,27 +25,30 @@ import {
   AlertTriangle,
   ShieldAlert,
   ChevronRight,
+  Award,
+  UserCheck,
+  KeyRound,
 } from 'lucide-react';
-import { useAuth } from '@/lib/auth-context';
+import { useAuth, type AuthContextValue } from '@/lib/auth-context';
 import { api } from '@/lib/api-client';
 import { Badge, Button, Modal } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
 import { formatDateTime } from '@/lib/format';
-import type { AdminRole, SessionRecord } from '@/types/api';
+import type { SessionRecord } from '@/types/api';
 
-interface NavItem {
+export interface NavItem {
   label: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
-  roles: AdminRole[];
+  visible: (auth: Pick<AuthContextValue, 'isHqAdmin' | 'isChurchAdmin' | 'isGroupAdmin' | 'can'>) => boolean;
 }
 
-interface NavGroup {
+export interface NavGroup {
   title: string;
   items: NavItem[];
 }
 
-const NAV_GROUPS: NavGroup[] = [
+export const NAV_GROUPS: NavGroup[] = [
   {
     title: 'Overview',
     items: [
@@ -53,13 +56,37 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Dashboard',
         href: '/',
         icon: LayoutDashboard,
-        roles: ['PLATFORM_ADMIN', 'CHURCH_ADMIN', 'GROUP_ADMIN'],
+        visible: (a) => a.isHqAdmin || a.isChurchAdmin || a.isGroupAdmin || a.can('branch.super_admin'),
       },
       {
         label: 'Verification Queue',
         href: '/verification',
         icon: ShieldCheck,
-        roles: ['PLATFORM_ADMIN', 'CHURCH_ADMIN'],
+        visible: (a) => a.isHqAdmin || a.can('members.verify'),
+      },
+    ],
+  },
+  {
+    title: 'Positions & Governance',
+    items: [
+      {
+        label: 'HQ Positions',
+        href: '/hq/positions',
+        icon: Award,
+        // Strictly HQ Platform Admin ONLY (never shown to Church Admin or branch.super_admin)
+        visible: (a) => a.isHqAdmin,
+      },
+      {
+        label: 'Branch Positions',
+        href: '/branch/positions',
+        icon: UserCheck,
+        visible: (a) => a.can('positions.assign'),
+      },
+      {
+        label: 'Position Permissions',
+        href: '/branch/permissions',
+        icon: KeyRound,
+        visible: (a) => a.can('branch.super_admin'),
       },
     ],
   },
@@ -70,25 +97,25 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Posts Queue',
         href: '/moderation/posts',
         icon: FileCheck2,
-        roles: ['PLATFORM_ADMIN', 'CHURCH_ADMIN', 'GROUP_ADMIN'],
+        visible: (a) => a.isHqAdmin || a.isChurchAdmin || a.isGroupAdmin,
       },
       {
         label: 'Content Reports',
         href: '/moderation/reports',
         icon: Flag,
-        roles: ['PLATFORM_ADMIN', 'CHURCH_ADMIN', 'GROUP_ADMIN'],
+        visible: (a) => a.isHqAdmin || a.isChurchAdmin || a.isGroupAdmin,
       },
       {
         label: 'Gallery Review',
         href: '/moderation/gallery',
         icon: Images,
-        roles: ['PLATFORM_ADMIN', 'CHURCH_ADMIN'],
+        visible: (a) => a.isHqAdmin || a.isChurchAdmin,
       },
       {
         label: 'Resources Review',
         href: '/moderation/resources',
         icon: BookOpen,
-        roles: ['PLATFORM_ADMIN', 'CHURCH_ADMIN'],
+        visible: (a) => a.isHqAdmin || a.isChurchAdmin,
       },
     ],
   },
@@ -99,25 +126,25 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Churches',
         href: '/churches',
         icon: Building2,
-        roles: ['PLATFORM_ADMIN', 'CHURCH_ADMIN'],
+        visible: (a) => a.isHqAdmin || a.isChurchAdmin || a.can('branch.super_admin'),
       },
       {
         label: 'Members & RBAC',
         href: '/members',
         icon: Users,
-        roles: ['PLATFORM_ADMIN', 'CHURCH_ADMIN'],
+        visible: (a) => a.isHqAdmin || a.can('members.view'),
       },
       {
         label: 'Import Members',
         href: '/members/import',
         icon: FileSpreadsheet,
-        roles: ['PLATFORM_ADMIN', 'CHURCH_ADMIN'],
+        visible: (a) => a.isHqAdmin || a.isChurchAdmin || a.can('branch.super_admin'),
       },
       {
         label: 'Groups',
         href: '/groups',
         icon: UsersRound,
-        roles: ['PLATFORM_ADMIN', 'CHURCH_ADMIN', 'GROUP_ADMIN'],
+        visible: (a) => a.isHqAdmin || a.isChurchAdmin || a.isGroupAdmin,
       },
     ],
   },
@@ -128,37 +155,51 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Marketplace',
         href: '/marketplace',
         icon: Store,
-        roles: ['PLATFORM_ADMIN', 'CHURCH_ADMIN'],
+        visible: (a) => a.isHqAdmin || a.isChurchAdmin,
       },
       {
         label: 'Communications',
         href: '/communications',
         icon: Megaphone,
-        roles: ['PLATFORM_ADMIN', 'CHURCH_ADMIN', 'GROUP_ADMIN'],
+        visible: (a) => a.isHqAdmin || a.isChurchAdmin || a.isGroupAdmin,
       },
       {
         label: 'Messages',
         href: '/messages',
         icon: Mail,
-        roles: ['PLATFORM_ADMIN', 'CHURCH_ADMIN', 'GROUP_ADMIN'],
+        visible: (a) => a.isHqAdmin || a.isChurchAdmin || a.isGroupAdmin,
       },
       {
         label: 'Audit Logs',
         href: '/audit',
         icon: ScrollText,
-        roles: ['PLATFORM_ADMIN', 'CHURCH_ADMIN'],
+        visible: (a) => a.isHqAdmin,
       },
     ],
   },
 ];
 
+export function getVisibleNavGroups(
+  auth: Pick<AuthContextValue, 'isHqAdmin' | 'isChurchAdmin' | 'isGroupAdmin' | 'can'>,
+): NavGroup[] {
+  return NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => item.visible(auth)),
+  })).filter((group) => group.items.length > 0);
+}
+
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const {
     member,
     roles,
+    permissions,
     loading,
     isAuthenticated,
     hasAdminAccess,
+    isHqAdmin,
+    isChurchAdmin,
+    isGroupAdmin,
+    can,
     suspensionNotice,
     logout,
     logoutAll,
@@ -223,7 +264,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     return null;
   }
 
-  // Strict Admin Auth Guard (ADMIN_FRONTEND_GUIDE.md §4)
+  // Admin Shell Gate (01-auth-and-permissions-shell.md)
   if (!hasAdminAccess) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#faf7f0] p-6">
@@ -231,13 +272,11 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#fdeceb] text-[#b83227]">
             <ShieldAlert className="h-7 w-7" />
           </div>
-          <h1 className="text-xl font-bold text-[#16241b]">Admin Access Required</h1>
+          <h1 className="text-xl font-bold text-[#16241b]">No Administrative Access</h1>
           <p className="mt-2 text-sm text-[#56635a] leading-relaxed">
             Signed in as <span className="font-semibold text-[#16241b]">{member?.fullName}</span>.
-            Your account does not hold a{' '}
-            <code className="font-semibold text-[#0a542d]">PLATFORM_ADMIN</code>,{' '}
-            <code className="font-semibold text-[#0a542d]">CHURCH_ADMIN</code>, or{' '}
-            <code className="font-semibold text-[#0a542d]">GROUP_ADMIN</code> assignment.
+            Your account does not hold any HQ admin role, branch admin role, or delegated position
+            permissions.
           </p>
           <div className="mt-6 flex justify-center">
             <Button variant="primary" onClick={handleSignOut}>
@@ -250,20 +289,20 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const visibleGroups = NAV_GROUPS.map((group) => ({
-    ...group,
-    items: group.items.filter((item) => item.roles.some((r) => roles.includes(r))),
-  })).filter((group) => group.items.length > 0);
+  const visibleGroups = getVisibleNavGroups({ isHqAdmin, isChurchAdmin, isGroupAdmin, can });
 
-  const primaryRole = roles.includes('PLATFORM_ADMIN')
-    ? 'PLATFORM_ADMIN'
-    : roles.includes('CHURCH_ADMIN')
-      ? 'CHURCH_ADMIN'
-      : 'GROUP_ADMIN';
+  const primaryBadge = isHqAdmin
+    ? 'HQ ADMIN'
+    : isChurchAdmin
+      ? 'CHURCH ADMIN'
+      : can('branch.super_admin')
+        ? 'BRANCH SUPER ADMIN'
+        : permissions.length > 0
+          ? 'BRANCH LEADER'
+          : 'GROUP ADMIN';
 
   const sidebarContent = (
     <div className="flex h-full flex-col bg-[#063b20] text-[#faf7f0] border-r border-[#d48a1f]/30">
-      {/* Brand header with official NKST emblem + golden border ring */}
       <div className="flex items-center justify-between border-b border-white/10 px-4 py-4">
         <Link href="/" className="flex items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white p-0.5 shadow-sm ring-2 ring-[#d48a1f]/70">
@@ -288,8 +327,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         </button>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
+      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5" aria-label="Admin Navigation">
         {visibleGroups.map((group) => (
           <div key={group.title}>
             <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#f5c76b]/80">
@@ -330,13 +368,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         ))}
       </nav>
 
-      {/* Signed-in admin footer */}
       <div className="border-t border-white/10 p-3.5">
         <div className="rounded-xl bg-[#042b17] border border-[#d48a1f]/25 p-3">
           <div className="flex items-center justify-between gap-2">
             <p className="truncate text-xs font-semibold text-white">{member?.fullName}</p>
-            <span className="rounded-full bg-[#d48a1f]/20 border border-[#f5c76b]/40 px-2 py-0.5 text-[10px] font-semibold text-[#f5c76b]">
-              {primaryRole.replace('_', ' ')}
+            <span className="rounded-full bg-[#d48a1f]/20 border border-[#f5c76b]/40 px-2 py-0.5 text-[10px] font-semibold text-[#f5c76b] whitespace-nowrap">
+              {primaryBadge}
             </span>
           </div>
           <p className="mt-1 truncate text-[11px] text-[#a8c9b5]">
@@ -367,12 +404,10 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-[#faf7f0] text-[#16241b]">
-      {/* Desktop Sidebar */}
       <aside className="hidden w-64 shrink-0 lg:block sticky top-0 h-screen">
         {sidebarContent}
       </aside>
 
-      {/* Mobile Sidebar Drawer */}
       {mobileOpen && (
         <div className="fixed inset-0 z-40 flex lg:hidden">
           <div
@@ -383,9 +418,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      {/* Main Content Area */}
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Top bar */}
         <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-[#e4dfd3] bg-white/95 px-4 backdrop-blur-md lg:px-8">
           <div className="flex items-center gap-3">
             <button
@@ -401,7 +434,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
               <span className="text-[#d4ccb9]">·</span>
               <span className="text-[#b57012] font-semibold">Psalm 119:105</span>
               <span className="text-[#d4ccb9]">·</span>
-              <span>Non-Financial Governance MVP</span>
+              <span>{isHqAdmin ? 'HQ Global Console' : member?.church?.name || 'Branch Console'}</span>
             </div>
           </div>
 
@@ -411,6 +444,11 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                 {role}
               </Badge>
             ))}
+            {!isHqAdmin && permissions.includes('branch.super_admin') && !roles.includes('CHURCH_ADMIN') && (
+              <Badge tone="gold" className="hidden md:inline-flex">
+                branch.super_admin
+              </Badge>
+            )}
           </div>
         </header>
 
@@ -430,7 +468,6 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         </main>
       </div>
 
-      {/* Active Device Sessions Modal */}
       <Modal
         open={sessionsOpen}
         onClose={() => setSessionsOpen(false)}

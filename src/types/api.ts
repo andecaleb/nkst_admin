@@ -156,6 +156,70 @@ export interface FlaggedKeywordRecord {
 }
 
 // ============================================================================
+// Church Positions & Per-Branch Permissions (02-hq / 03-branch)
+// ============================================================================
+
+export type PositionPermissionKey =
+  | 'members.view'
+  | 'members.edit'
+  | 'members.verify'
+  | 'positions.assign'
+  | 'branch.super_admin';
+
+export interface MyBranchPermissionsResponse {
+  branchId: string | null;
+  permissions: PositionPermissionKey[];
+}
+
+export interface PermissionCatalogItem {
+  key: PositionPermissionKey;
+  label: string;
+  description: string;
+  warning?: string;
+}
+
+export interface HqPositionRecord {
+  id: string;
+  title: string;
+  description: string;
+  maxSeats: number | null;
+  seatLabel: string;
+  isActive: boolean;
+  branchesUsingCount: number;
+  activeAssignmentsCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BranchPositionHolder {
+  assignmentId: string;
+  memberId: string;
+  fullName: string;
+  photoUrl?: string | null;
+  startedAt: string;
+}
+
+export interface BranchPositionRecord {
+  id: string;
+  title: string;
+  description: string;
+  maxSeats: number | null;
+  seatLabel: string;
+  filled: number;
+  remaining: number | null;
+  isFull: boolean;
+  permissions: PositionPermissionKey[];
+  holders: BranchPositionHolder[];
+}
+
+export interface BranchPositionPermissionsResponse {
+  churchId: string;
+  positionId: string;
+  positionTitle: string;
+  permissions: PositionPermissionKey[];
+}
+
+// ============================================================================
 // JSON:API 1.1 Envelopes
 // ============================================================================
 

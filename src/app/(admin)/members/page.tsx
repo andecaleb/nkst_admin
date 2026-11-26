@@ -19,6 +19,9 @@ import {
   Info,
   ChevronLeft,
   ChevronRight,
+  Pencil,
+  ShieldOff,
+  ShieldAlert,
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
@@ -34,6 +37,7 @@ import {
   PageHeader,
   ReasonModal,
   Select,
+  Textarea,
   statusTone,
 } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
@@ -94,14 +98,36 @@ function derivePosition(
 
 export default function MembersRbacPage() {
   const {
+    isHqAdmin,
     isPlatformAdmin,
+    isChurchAdmin,
+    can,
     member: currentMember,
     administeredChurchIds,
     scopedChurchId,
   } = useAuth();
+  const canViewMembers = isHqAdmin || can('members.view');
+  const canEditMembers = isHqAdmin || can('members.edit');
+  const canVerifyMembers = isHqAdmin || can('members.verify');
+  const canSuspendMembers = isHqAdmin || isChurchAdmin;
   const toast = useToast();
 
   const [activeTab, setActiveTab] = useState<'directory' | 'matrix'>('directory');
+
+  // Edit Member modal (04-members-verification-and-inbox-ui.md)
+  const [editOpen, setEditOpen] = useState(false);
+  const [editFirstName, setEditFirstName] = useState('');
+  const [editMiddleName, setEditMiddleName] = useState('');
+  const [editSurname, setEditSurname] = useState('');
+  const [editBio, setEditBio] = useState('');
+  const [editState, setEditState] = useState('');
+  const [editLga, setEditLga] = useState('');
+  const [editLocation, setEditLocation] = useState('');
+  const [editPhotoUrl, setEditPhotoUrl] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // Unverify modal
+  const [unverifyOpen, setUnverifyOpen] = useState(false);
 
   // Directory state
   const [directoryRows, setDirectoryRows] = useState<MemberDirectoryRow[]>([]);
@@ -144,6 +170,11 @@ export default function MembersRbacPage() {
   const [loadingMatrix, setLoadingMatrix] = useState(true);
 
   const loadData = useCallback(async () => {
+    if (!canViewMembers) {
+      setLoadingDirectory(false);
+      setLoadingMatrix(false);
+      return;
+    }
     setLoadingDirectory(true);
     setLoadingMatrix(true);
 
@@ -303,6 +334,7 @@ export default function MembersRbacPage() {
       setLoadingMatrix(false);
     }
   }, [
+    canViewMembers,
     search,
     churchFilter,
     stateFilter,
@@ -496,6 +528,71 @@ export default function MembersRbacPage() {
       toast.error('Revocation failed', err instanceof ApiError ? err.message : undefined);
     }
   };
+
+  const openEditMember = () => {
+    if (!inspected?.profile) return;
+    const p = inspected.profile;
+    setEditFirstName(p.firstName || '');
+    setEditMiddleName(p.middleName || '');
+    setEditSurname(p.surname || '');
+    setEditBio(p.bio || '');
+    setEditState(p.state || '');
+    setEditLga(p.lga || '');
+    setEditLocation(p.residentialLocation || '');
+    setEditPhotoUrl(p.photoUrl || '');
+    setEditOpen(true);
+  };
+
+  const handleSaveEditMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inspected?.profile) return;
+    setSavingEdit(true);
+    try {
+      await api.patch(`/members/${inspected.profile.id}`, {
+        firstName: editFirstName.trim(),
+        middleName: editMiddleName.trim() || undefined,
+        surname: editSurname.trim(),
+        bio: editBio.trim() || undefined,
+        state: editState.trim() || undefined,
+        lga: editLga.trim() || undefined,
+        residentialLocation: editLocation.trim() || undefined,
+        photoUrl: editPhotoUrl.trim() || undefined,
+      });
+      toast.success('Member profile updated');
+      setEditOpen(false);
+      await inspectMember(inspected.profile.id);
+      loadData();
+    } catch (err) {
+      toast.error('Failed to update member', err instanceof ApiError ? err.message : undefined);
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleUnverifyMember = async (note: string) => {
+    if (!inspected?.profile) return;
+    try {
+      await api.patch(`/verification/members/${inspected.profile.id}/unverify`, {
+        decisionNote: note || undefined,
+      });
+      toast.success('Member unverified', 'Verification badge has been revoked.');
+      await inspectMember(inspected.profile.id);
+      loadData();
+    } catch (err) {
+      toast.error('Unverify failed', err instanceof ApiError ? err.message : undefined);
+      throw err;
+    }
+  };
+
+  if (!canViewMembers) {
+    return (
+      <EmptyState
+        icon={<ShieldAlert className="h-6 w-6 text-[#b83227]" />}
+        title="403 Forbidden — Members View Permission Required"
+        description="You need the members.view permission (or HQ Platform Admin access) to browse the member directory."
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -835,17 +932,32 @@ export default function MembersRbacPage() {
                   {formatEnumLabel(inspected.profile.profileVisibility)} Profile
                 </Badge>
               </div>
-              {inspected.profile.verificationState === 'suspended' ? (
-                <Button variant="emerald" size="sm" onClick={handleReinstate}>
-                  <UserCheck className="h-3.5 w-3.5" />
-                  Reinstate Account
-                </Button>
-              ) : (
-                <Button variant="danger" size="sm" onClick={() => setSuspendOpen(true)}>
-                  <UserX className="h-3.5 w-3.5" />
-                  Suspend Account
-                </Button>
-              )}
+              <div className="flex flex-wrap items-center gap-2">
+                {canEditMembers && (
+                  <Button variant="secondary" size="sm" onClick={openEditMember}>
+                    <Pencil className="h-3.5 w-3.5 text-[#0a542d]" />
+                    Edit Member
+                  </Button>
+                )}
+                {canVerifyMembers && inspected.profile.verificationState === 'verified' && (
+                  <Button variant="secondary" size="sm" onClick={() => setUnverifyOpen(true)}>
+                    <ShieldOff className="h-3.5 w-3.5 text-[#a96910]" />
+                    Unverify
+                  </Button>
+                )}
+                {canSuspendMembers &&
+                  (inspected.profile.verificationState === 'suspended' ? (
+                    <Button variant="emerald" size="sm" onClick={handleReinstate}>
+                      <UserCheck className="h-3.5 w-3.5" />
+                      Reinstate Account
+                    </Button>
+                  ) : (
+                    <Button variant="danger" size="sm" onClick={() => setSuspendOpen(true)}>
+                      <UserX className="h-3.5 w-3.5" />
+                      Suspend Account
+                    </Button>
+                  ))}
+              </div>
             </div>
 
             {inspected.profile.suspensionReason && (
@@ -945,6 +1057,98 @@ export default function MembersRbacPage() {
           </div>
         )}
       </Modal>
+
+      {/* Edit Member Modal (members.edit) */}
+      <Modal
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        title={`Edit Member: ${inspected?.profile.fullName || ''}`}
+        description="Update member profile details for your congregation."
+        maxWidth="max-w-xl"
+      >
+        <form onSubmit={handleSaveEditMember} className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div>
+              <FieldLabel required>First Name</FieldLabel>
+              <Input
+                value={editFirstName}
+                onChange={(e) => setEditFirstName(e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <FieldLabel>Middle Name</FieldLabel>
+              <Input
+                value={editMiddleName}
+                onChange={(e) => setEditMiddleName(e.target.value)}
+              />
+            </div>
+            <div>
+              <FieldLabel required>Surname</FieldLabel>
+              <Input
+                value={editSurname}
+                onChange={(e) => setEditSurname(e.target.value)}
+                required
+              />
+            </div>
+          </div>
+          <div>
+            <FieldLabel>Bio</FieldLabel>
+            <Textarea
+              value={editBio}
+              onChange={(e) => setEditBio(e.target.value)}
+              placeholder="Member biography..."
+            />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <FieldLabel>State</FieldLabel>
+              <Input value={editState} onChange={(e) => setEditState(e.target.value)} />
+            </div>
+            <div>
+              <FieldLabel>LGA</FieldLabel>
+              <Input value={editLga} onChange={(e) => setEditLga(e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <FieldLabel>Residential Location</FieldLabel>
+            <Input
+              value={editLocation}
+              onChange={(e) => setEditLocation(e.target.value)}
+            />
+          </div>
+          <div>
+            <FieldLabel>Photo URL</FieldLabel>
+            <Input
+              value={editPhotoUrl}
+              onChange={(e) => setEditPhotoUrl(e.target.value)}
+              placeholder="https://..."
+            />
+          </div>
+          <div className="flex justify-end gap-2.5 pt-2">
+            <Button type="button" variant="ghost" onClick={() => setEditOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" loading={savingEdit}>
+              Save Profile
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Unverify Member Modal (members.verify) */}
+      <ReasonModal
+        open={unverifyOpen}
+        onClose={() => setUnverifyOpen(false)}
+        title="Unverify Member"
+        description={`Revoke verification for ${inspected?.profile.fullName || 'this member'}?`}
+        confirmLabel="Unverify Member"
+        confirmVariant="danger"
+        reasonLabel="Decision Note"
+        reasonPlaceholder="Optional note for the verification audit trail..."
+        required={false}
+        onConfirm={handleUnverifyMember}
+      />
 
       {/* Suspend Member Modal (Mandatory Reason — VER-08) */}
       <ReasonModal
