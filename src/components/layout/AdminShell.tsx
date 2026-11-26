@@ -16,6 +16,7 @@ import {
   UsersRound,
   Store,
   Megaphone,
+  Mail,
   ScrollText,
   LogOut,
   MonitorSmartphone,
@@ -133,6 +134,12 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Communications',
         href: '/communications',
         icon: Megaphone,
+        roles: ['PLATFORM_ADMIN', 'CHURCH_ADMIN', 'GROUP_ADMIN'],
+      },
+      {
+        label: 'Messages',
+        href: '/messages',
+        icon: Mail,
         roles: ['PLATFORM_ADMIN', 'CHURCH_ADMIN', 'GROUP_ADMIN'],
       },
       {

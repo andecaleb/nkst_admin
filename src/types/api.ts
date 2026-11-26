@@ -124,6 +124,37 @@ export type OrderStatus =
 
 export type RecitationStatus = 'draft' | 'published';
 
+export type DirectMessageStatus = 'pending_approval' | 'approved' | 'rejected';
+export type KeywordSeverity = 'low' | 'medium' | 'high';
+
+export interface DirectMessageRecord {
+  id: string;
+  senderId: string;
+  recipientId: string;
+  churchId: string;
+  subject?: string | null;
+  body: string;
+  status: DirectMessageStatus;
+  isFlagged: boolean;
+  matchedKeywords: string[];
+  reviewNote?: string | null;
+  rejectionReason?: string | null;
+  deliveredAt?: string | null;
+  readAt?: string | null;
+  createdAt: string;
+  sender?: MemberCard;
+  recipient?: MemberCard;
+  church?: ChurchSummary;
+}
+
+export interface FlaggedKeywordRecord {
+  id: string;
+  keyword: string;
+  severity: KeywordSeverity;
+  isActive: boolean;
+  createdAt: string;
+}
+
 // ============================================================================
 // JSON:API 1.1 Envelopes
 // ============================================================================

@@ -46,6 +46,7 @@ export function statusTone(status?: string | null): BadgeTone {
       return 'emerald';
     case 'pending_verification':
     case 'pending_review':
+    case 'pending_approval':
     case 'pending':
     case 'submitted':
     case 'ready_for_review':
