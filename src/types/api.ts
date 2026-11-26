@@ -205,6 +205,8 @@ export interface MemberProfile {
   verificationBadge: string;
   profileVisibility: ProfileVisibility;
   isPlatformAdmin?: boolean;
+  churchPosition?: string | null;
+  roles?: string[];
   suspensionReason?: string | null;
   socialLinks?: MemberSocialLink[];
 }
